@@ -1,18 +1,24 @@
 package m3u8
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
-	"path"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/58kg/util"
 )
 
 type M3u8 struct {
-	Segments  []Segment
-	PlayInfos []PlayInfo
+	Segments     []Segment
+	MastPlayList []PlayInfo
+	PlayListType string
+	EndList      bool
 }
 
 type PlayInfo struct {
@@ -27,12 +33,13 @@ type Resolution struct {
 	High  int64
 }
 
-// Ts文件元信息
 type Segment struct {
 	Idx         int
 	Url         string
-	ErrMsg      string
+	Duration    time.Duration
+	Sequence    int64
 	EncryptMeta EncryptMeta
+	ErrMsg      string
 }
 
 func (s Segment) IsEncrypted() bool {
@@ -51,12 +58,23 @@ const (
 	CryptMethodNONE = "NONE"
 )
 
-var paramPattern = regexp.MustCompile(`([a-zA-Z-]+)=("[^"]+"|[^",]+)`)
+var attrReg = regexp.MustCompile(`([A-Z-]+)=("[^"\n\r]+"|[^",\s]+)`)
 
 // 注意Parse不会填充SecretKey
-func Parse(lines []string, m3u8Url *url.URL) (*M3u8, error) {
-	if m3u8Url == nil || !m3u8Url.IsAbs() {
-		return nil, errors.New("m3u8Url is not absolute url")
+func Parse(content []byte, m3u8Url string) (*M3u8, error) {
+	urlStruct, err := url.Parse(m3u8Url)
+	if err != nil {
+		return nil, fmt.Errorf("m3u8 url illegal, %w", err)
+	}
+
+	if !urlStruct.IsAbs() {
+		return nil, fmt.Errorf("m3u8 url %s is not absolute url", m3u8Url)
+	}
+
+	var lines []string
+	sc := bufio.NewScanner(bytes.NewReader(content))
+	for sc.Scan() {
+		lines = append(lines, sc.Text())
 	}
 
 	if !(len(lines) >= 1 && strings.TrimSpace(lines[0]) == "#EXTM3U") {
@@ -66,149 +84,165 @@ func Parse(lines []string, m3u8Url *url.URL) (*M3u8, error) {
 	var (
 		ret         = &M3u8{}
 		encryptMeta EncryptMeta
+		seq         int64
+		duration    time.Duration
 	)
 
 	for i := 1; i < len(lines); i++ {
-		l := strings.TrimSpace(lines[i])
+		line := util.TrimWhite(lines[i])
 		switch {
-		case l == "":
-		case strings.HasPrefix(l, "#EXT-X-STREAM-INF:"):
+		case line == "":
+		case !strings.HasPrefix(line, "#"):
+			u, err := toUrl(line, urlStruct)
+			if err != nil {
+				return nil, fmt.Errorf("line:%d, ts file url %s is illegal, %w", i, line, err)
+			}
+			ret.Segments = append(ret.Segments, Segment{
+				Idx:         len(ret.Segments),
+				Url:         u,
+				Duration:    duration,
+				Sequence:    seq + int64(len(ret.Segments)),
+				EncryptMeta: encryptMeta,
+			})
+		case !strings.HasPrefix(line, "#EXT"):
+		case strings.HasPrefix(line, "#EXT-X-STREAM-INF:"):
 			play := PlayInfo{}
-			for {
-				params := toParam(l)
-				if v, ok := params["PROGRAM-ID"]; ok {
-					pid, err := strconv.ParseInt(v, 10, 64)
-					if err != nil {
-						return nil, fmt.Errorf("line:%d, PROGRAM-ID(%s) is not a number, %w", i, v, err)
-					}
-					play.ProgramId = pid
+			params := toParam(line)
+			if v, ok := params["PROGRAM-ID"]; ok {
+				pid, err := strconv.ParseInt(v, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("line:%d, PROGRAM-ID %s is not a number, %w", i, v, err)
 				}
-				if v, ok := params["BANDWIDTH"]; ok {
-					bandWidth, err := strconv.ParseInt(v, 10, 64)
-					if err != nil {
-						return nil, fmt.Errorf("line:%d, BANDWIDTH(%s) is not a number, %w", i, v, err)
-					}
-					play.BandWidth = bandWidth
+				play.ProgramId = pid
+			}
+			if v, ok := params["BANDWIDTH"]; ok {
+				bandWidth, err := strconv.ParseInt(v, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("line:%d, BANDWIDTH %s is not a number, %w", i, v, err)
 				}
-				if v, ok := params["RESOLUTION"]; ok {
-					arr := strings.Split(v, "x")
-					if len(arr) != 2 {
-						return nil, fmt.Errorf("line:%d, RESOLUTION(%s) is illegal", i, v)
-					}
-					width, err := strconv.ParseInt(arr[0], 10, 64)
-					if err != nil {
-						return nil, fmt.Errorf("line:%d, RESOLUTION(%s) is illegal, %w", i, v, err)
-					}
-					high, err := strconv.ParseInt(arr[1], 10, 64)
-					if err != nil {
-						return nil, fmt.Errorf("line:%d, RESOLUTION(%s) is illegal, %w", i, v, err)
-					}
-					play.Resolution.Width = width
-					play.Resolution.High = high
+				play.BandWidth = bandWidth
+			}
+			if v, ok := params["RESOLUTION"]; ok {
+				arr := strings.Split(v, "x")
+				if len(arr) != 2 {
+					return nil, fmt.Errorf("line:%d, RESOLUTION %s is illegal", i, v)
 				}
-
-				if !continueWithNextLine(l) {
-					break
+				width, err := strconv.ParseInt(arr[0], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("line:%d, RESOLUTION %s is illegal, %w", i, v, err)
 				}
-				i++
-				l = strings.TrimSpace(lines[i])
+				high, err := strconv.ParseInt(arr[1], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("line:%d, RESOLUTION %s is illegal, %w", i, v, err)
+				}
+				play.Resolution.Width = width
+				play.Resolution.High = high
 			}
 
 			i++
-			l = strings.TrimSpace(lines[i])
-			u, err := toUrl(l, m3u8Url)
+			line = util.TrimWhite(lines[i])
+			u, err := toUrl(line, urlStruct)
 			if err != nil {
-				return nil, fmt.Errorf("line:%d, sub m3u8 url(%s) is illegal, %w", i, l, err)
+				return nil, fmt.Errorf("line:%d, sub m3u8 url %s is illegal, %w", i, line, err)
 			}
-			play.M3u8Url = u.String()
-			ret.PlayInfos = append(ret.PlayInfos, play)
-		case strings.HasPrefix(l, "#EXT-X-KEY"):
+			play.M3u8Url = u
+			ret.MastPlayList = append(ret.MastPlayList, play)
+		case strings.HasPrefix(line, "#EXT-X-KEY"):
 			encryptMeta = EncryptMeta{}
-			for {
-				params := toParam(l)
-				if v, ok := params["METHOD"]; ok {
-					if v != CryptMethodAES && v != CryptMethodNONE {
-						return nil, fmt.Errorf("line:%d, unknown encrypt method %s", i, v)
-					}
-					encryptMeta.Method = v
+			params := toParam(line)
+			if v, ok := params["METHOD"]; ok {
+				if v != CryptMethodAES && v != CryptMethodNONE {
+					return nil, fmt.Errorf("line:%d, unknown encrypt method %s", i, v)
 				}
-				if v, ok := params["URI"]; ok {
-					u, err := toUrl(v, m3u8Url)
-					if err != nil {
-						return nil, fmt.Errorf("line:%d, URI(%s) is illegal, %w", i, v, err)
-					}
-					encryptMeta.SecretKeyUrl = u.String()
-				}
-				if v, ok := params["IV"]; ok {
-					encryptMeta.IV = v
-				}
-
-				if !continueWithNextLine(l) {
-					break
-				}
-				i++
-				l = strings.TrimSpace(lines[i])
+				encryptMeta.Method = v
 			}
-		case strings.HasPrefix(l, "#"):
-			for {
-				if !continueWithNextLine(l) {
-					break
+			if v, ok := params["URI"]; ok {
+				u, err := toUrl(v, urlStruct)
+				if err != nil {
+					return nil, fmt.Errorf("line:%d, URI %s is illegal, %w", i, v, err)
 				}
-				i++
-				l = strings.TrimSpace(lines[i])
+				encryptMeta.SecretKeyUrl = u
 			}
-		default:
-			seg := Segment{}
-			u, err := toUrl(l, m3u8Url)
+			if v, ok := params["IV"]; ok {
+				encryptMeta.IV = v
+			}
+		case strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE"):
+			pos := strings.Index(line, ":")
+			if pos < 0 {
+				return nil, fmt.Errorf("line:%d, EXT-X-PLAYLIST-TYPE %s is illegal", i, line)
+			}
+			line = line[pos+1:]
+			if line != "VOD" && line != "EVENT" {
+				return nil, fmt.Errorf("line:%d, EXT-X-PLAYLIST-TYPE %s is illegal", i, line)
+			}
+			ret.PlayListType = line
+		case strings.HasPrefix(line, "#EXTINF"):
+			pos := strings.Index(line, ":")
+			if pos < 0 {
+				return nil, fmt.Errorf("line:%d, EXTINF %s is illegal", i, line)
+			}
+			line = line[pos+1:]
+			pos = strings.Index(line, ",")
+			if pos >= 0 {
+				line = line[:pos]
+			}
+			d, err := strconv.ParseFloat(line, 64)
 			if err != nil {
-				return nil, fmt.Errorf("line:%d, ts file url(%s) is illegal, %w", i, l, err)
+				return nil, fmt.Errorf("line:%d, EXTINF %s is illegal, %w", i, line, err)
 			}
-			seg.Idx = len(ret.Segments)
-			seg.Url = u.String()
-			seg.EncryptMeta = encryptMeta
-			ret.Segments = append(ret.Segments, seg)
+			duration = time.Duration(d * float64(time.Second))
+		case strings.HasPrefix(line, "#EXT-X-MEDIA-SEQUENCE"):
+			pos := strings.Index(line, ":")
+			if pos < 0 {
+				return nil, fmt.Errorf("line:%d, EXT-X-MEDIA-SEQUENCE %s is illegal", i, line)
+			}
+			line = line[pos+1:]
+			seq, err = strconv.ParseInt(line, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("line:%d, EXT-X-MEDIA-SEQUENCE %s is illegal", i, line)
+			}
+		case strings.HasPrefix(line, "#EXT-X-ENDLIST"):
+			if line != "#EXT-X-ENDLIST" {
+				return nil, fmt.Errorf("line:%d, EXT-X-ENDLIST %s is illegal", i, line)
+			}
+			ret.EndList = true
 		}
 	}
 	return ret, nil
 }
 
-// line必须是去除前导和尾随空格后的结果
-func continueWithNextLine(l string) bool {
-	g := len(l)
-	return g >= 2 && l[g-1] == '\\' && l[g-2] == ' '
-}
-
 func toParam(l string) map[string]string {
-	r := paramPattern.FindAllStringSubmatch(l, -1)
+	r := attrReg.FindAllStringSubmatch(l, -1)
 	ret := make(map[string]string)
 	for _, v := range r {
-		ret[v[1]] = strings.Trim(strings.Trim(v[2], "\""), "\"")
+		ret[v[1]] = strings.Trim(v[2], "\"")
 	}
 	return ret
 }
 
-func toUrl(uri string, m3u8Url *url.URL) (*url.URL, error) {
-	if strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://") {
-		ret, err := url.Parse(uri)
-		if err != nil {
-			return nil, fmt.Errorf("uri(%s) is not illegal, %w", uri, err)
+func toUrl(uri string, m3u8UrlStruct *url.URL) (ret string, err error) {
+	defer func() {
+		if _, err = url.Parse(uri); err != nil {
+			err = fmt.Errorf("uri %s is illegal, %w", uri, err)
+			return
 		}
-		return ret, nil
+	}()
+
+	if strings.HasPrefix(uri, "https://") || strings.HasPrefix(uri, "http://") {
+		return uri, nil
 	}
 
-	var prefix string
+	var (
+		m3u8Url = m3u8UrlStruct.String()
+		prefix  string
+	)
+
+	if m3u8UrlStruct.Path != "" {
+		prefix = m3u8Url[0:strings.LastIndex(m3u8Url, "/")]
+	}
+
 	if uri[0] == '/' {
-		prefix = m3u8Url.Scheme + "://" + m3u8Url.Host
-	} else {
-		v := m3u8Url.String()
-		prefix = v[0:strings.LastIndex(v, "/")]
+		return prefix + uri, nil
 	}
-	u := prefix + path.Join("/", uri)
-
-	ret, err := url.Parse(u)
-	if err != nil {
-		return nil, fmt.Errorf("uri(%s) is not illegal, %w", uri, err)
-	}
-
-	return ret, nil
+	return prefix + "/" + uri, nil
 }

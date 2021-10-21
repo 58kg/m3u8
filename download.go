@@ -1,24 +1,22 @@
 package m3u8
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/58kg/gpool"
-	"github.com/58kg/util"
-	"golang.org/x/time/rate"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/58kg/gpool"
+	"github.com/58kg/util"
+	"golang.org/x/time/rate"
 )
 
 type Model int
@@ -28,18 +26,18 @@ const (
 	ModelConvertToMP4 = 1
 )
 
-func Download(ctx context.Context, m3u8Url string, fileDir string, tsFilePrefix string, workerCnt int, withBar bool) (*Result, error) {
-	status, err := DownloadWithOpt(ctx, NewDefaultOption(m3u8Url, fileDir, tsFilePrefix, workerCnt))
+func Download(ctx context.Context, m3u8Url string, model Model, fileDir string, tsFilePrefix string, workerCnt int, withBar bool) (*Result, error) {
+	status, err := DownloadWithOpt(ctx, NewDefaultOption(m3u8Url, model, fileDir, tsFilePrefix, workerCnt))
 	if err != nil {
 		return nil, err
 	}
 	return GenResult(status, withBar), nil
 }
 
-func NewDefaultOption(m3u8Url string, fileDir string, tsFilePrefix string, workerCnt int) Option {
+func NewDefaultOption(m3u8Url string, model Model, fileDir string, tsFilePrefix string, workerCnt int) Option {
 	return Option{
 		M3u8Url:   m3u8Url,
-		Model:     ModelConvertToMP4,
+		Model:     model,
 		Qps:       2 * workerCnt,
 		WorkerCnt: workerCnt,
 		ChooseStream: func(infos []PlayInfo) PlayInfo {
@@ -321,6 +319,10 @@ func (md *m3u8Downloader) succ(_ context.Context) {
 		return
 	}
 
+	if md.removeSubTs {
+		_ = os.Remove(mergedPath)
+	}
+
 	md.eventChan <- Event{
 		ConvToMP4: func() *bool {
 			t := true
@@ -462,12 +464,7 @@ func (md *m3u8Downloader) httpGet(u string) ([]byte, error) {
 	return body, nil
 }
 
-func (md *m3u8Downloader) Parse(ctx context.Context, link string) (*M3u8, error) {
-	uRL, err := url.Parse(link)
-	if err != nil {
-		return nil, fmt.Errorf("link(%s) is illegal, %w", link, err)
-	}
-
+func (md *m3u8Downloader) Parse(ctx context.Context, link string) (ret *M3u8, err error) {
 	var body []byte
 	util.Retry(func(sn int) (end bool) {
 		body, err = md.httpGet(link)
@@ -477,24 +474,18 @@ func (md *m3u8Downloader) Parse(ctx context.Context, link string) (*M3u8, error)
 		return nil, err
 	}
 
-	var lines []string
-	sc := bufio.NewScanner(bytes.NewReader(body))
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
-
 	//解析请求体内容，m3u8中的内容
-	m3u8, err := Parse(lines, uRL)
+	m3u8, err := Parse(body, link)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(m3u8.PlayInfos) > 0 {
-		if len(m3u8.PlayInfos) == 1 {
-			return md.Parse(ctx, m3u8.PlayInfos[0].M3u8Url)
+	if len(m3u8.MastPlayList) > 0 {
+		if len(m3u8.MastPlayList) == 1 {
+			return md.Parse(ctx, m3u8.MastPlayList[0].M3u8Url)
 		}
 		if md.ChooseStream != nil {
-			return md.Parse(ctx, md.ChooseStream(m3u8.PlayInfos).M3u8Url)
+			return md.Parse(ctx, md.ChooseStream(m3u8.MastPlayList).M3u8Url)
 		}
 		return nil, fmt.Errorf("link(%s) is master play list and has more than 1 stream, but ChooseStream not set", link)
 	}

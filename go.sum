@@ -5,8 +5,8 @@ github.com/58kg/logs v0.0.0-20210919144247-4afdcda4f960 h1:oNyDugFiERri7vhr/P9S9
 github.com/58kg/logs v0.0.0-20210919144247-4afdcda4f960/go.mod h1:LYvN8hT2SLOBxiSeWswUdS2lXaWkxaL7itY0+VP/Fd0=
 github.com/58kg/tostr v0.0.0-20210919133647-5bf142b94bc4 h1:i6rjydJ9D3BgG6QaqK2NyDkk+N/HWrBAsZh/OKVv3Lo=
 github.com/58kg/tostr v0.0.0-20210919133647-5bf142b94bc4/go.mod h1:IgawRa+V5phNqAgWenIeq/VVC5dL+pLLrVxr4fbJfbg=
-github.com/58kg/util v0.0.0-20211018151249-938bd115a643 h1:BwV6HkK0aQPPFJXvAPPNApqIDcivOBlgo8Cr6oo3/hc=
-github.com/58kg/util v0.0.0-20211018151249-938bd115a643/go.mod h1:4j7yaihDD5kpeJxS1TsZ+7Hp4+FwBTKVNahwErTQoqE=
+github.com/58kg/util v0.0.0-20211020035049-5a9166a347bc h1:YtUP0oldGMowPqLqI+UaDzjgupkmKcwOQwnsFCOFZWY=
+github.com/58kg/util v0.0.0-20211020035049-5a9166a347bc/go.mod h1:4j7yaihDD5kpeJxS1TsZ+7Hp4+FwBTKVNahwErTQoqE=
 github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 h1:kHaBemcxl8o/pQ5VM1c8PVE1PubbNx3mjUr09OqWGCs=
 github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575/go.mod h1:9d6lWj8KzO/fd/NrVaLscBKmPigpZpn5YawRPw+e3Yo=
 github.com/golang/protobuf v1.5.0/go.mod h1:FsONVRAS9T7sI+LIUmWTfcYkHO4aIWwzhcaSAoJOfIk=
