@@ -4,8 +4,9 @@ github.com/gogokit/gpool v0.0.0-20220205072614-3f3fabb75129 h1:VsEFMI/mvyevruz9z
 github.com/gogokit/gpool v0.0.0-20220205072614-3f3fabb75129/go.mod h1:IrW8kBqrEd2QDz/xZy87HHI3CIk5ctcqPlboyOWKVss=
 github.com/gogokit/logs v0.0.0-20220205070630-f29a08415be1 h1:6a54GMejdjM/srPWDXDf/YzpNo+tmPgzutemNyqFo/I=
 github.com/gogokit/logs v0.0.0-20220205070630-f29a08415be1/go.mod h1:gdrCo9YH1UJXtOGyPH1FD3gw4GFATG/SnZ0rgTdMsd0=
-github.com/gogokit/tostr v1.0.0 h1:bohRNnvQUo3R5IR2njhzRskduHWVnXI8IOn2OqmG5RU=
 github.com/gogokit/tostr v1.0.0/go.mod h1:dGnlQl4cvu0NtLwZsk11tiPHk2SBXHbsBqWgwU65oF0=
+github.com/gogokit/tostr v1.0.3 h1:6dQX5oLATE6zQT6ChebFlKzcSPjErNmyj/dBY6y/Cr8=
+github.com/gogokit/tostr v1.0.3/go.mod h1:yD2dWxj28y/2YyKtI8XD/boWwHdRfwXgHGvp3pU1Jws=
 github.com/gogokit/util v0.0.0-20220205072727-7c7766722214 h1:OAkb/Jvoilw/7+vH0sG0L9/Mdb81GovvEKmIiCDCmGo=
 github.com/gogokit/util v0.0.0-20220205072727-7c7766722214/go.mod h1:FM0T9yQGTRNRz0s2Pd9/RiPJLMgkmF0U0esrCYkEtrk=
 github.com/golang/protobuf v1.5.0/go.mod h1:FsONVRAS9T7sI+LIUmWTfcYkHO4aIWwzhcaSAoJOfIk=
@@ -27,5 +28,6 @@ golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac/go.mod h1:tRJNPiyCQ0inRvYxb
 golang.org/x/tools v0.0.0-20190328211700-ab21143f2384/go.mod h1:LCzVGOaR6xXOjkQ3onu1FJEFr0SW1gC7cKk1uF8kGRs=
 golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
-google.golang.org/protobuf v1.27.1 h1:SnqbnDw1V7RiZcXPx5MEeqPv2s79L9i7BJUlG/+RurQ=
 google.golang.org/protobuf v1.27.1/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
+google.golang.org/protobuf v1.30.0 h1:kPPoIgf3TsEvrm0PFe15JQ+570QVxYzEvvHqChK+cng=
+google.golang.org/protobuf v1.30.0/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
