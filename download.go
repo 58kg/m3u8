@@ -60,14 +60,15 @@ func NewDefaultOption(m3u8Url string, model Model, fileDir string, tsFilePrefix 
 }
 
 type Option struct {
-	M3u8Url      string
-	Model        Model
-	Qps          int
-	WorkerCnt    int
-	ChooseStream func(infos []PlayInfo) PlayInfo
-	RemoveSubTs  bool
-	FileDir      string
-	TsFilePrefix string
+	M3u8Url             string
+	Model               Model
+	Qps                 int
+	WorkerCnt           int
+	ChooseStream        func(infos []PlayInfo) PlayInfo
+	RemoveSubTs         bool
+	FileDir             string
+	TsFilePrefix        string
+	HttpRequestCallback func(r *http.Request) error
 }
 
 func DownloadWithOpt(ctx context.Context, opt Option) (Status, error) {
@@ -80,14 +81,15 @@ func DownloadWithOpt(ctx context.Context, opt Option) (Status, error) {
 			}
 			return rate.NewLimiter(rate.Limit(opt.Qps), opt.Qps)
 		}(),
-		doMerge:        opt.Model >= ModelMerged,
-		convToMP4:      opt.Model >= ModelConvertToMP4,
-		ffmpeg:         "ffmpeg",
-		removeSubTs:    opt.RemoveSubTs,
-		fileDir:        opt.FileDir,
-		tsFilePrefix:   opt.TsFilePrefix,
-		allDone:        make(chan struct{}),
-		stopSignalChan: make(chan struct{}),
+		doMerge:             opt.Model >= ModelMerged,
+		convToMP4:           opt.Model >= ModelConvertToMP4,
+		ffmpeg:              "ffmpeg",
+		removeSubTs:         opt.RemoveSubTs,
+		fileDir:             opt.FileDir,
+		tsFilePrefix:        opt.TsFilePrefix,
+		allDone:             make(chan struct{}),
+		stopSignalChan:      make(chan struct{}),
+		httpRequestCallback: opt.HttpRequestCallback,
 	}).Download(ctx, opt.M3u8Url)
 }
 
@@ -103,23 +105,24 @@ type Event struct {
 }
 
 type m3u8Downloader struct {
-	ChooseStream   func([]PlayInfo) PlayInfo
-	gp             *gpool.Pool
-	wg             sync.WaitGroup
-	qpsLimit       *rate.Limiter
-	fileDir        string
-	tsFilePrefix   string
-	doMerge        bool
-	convToMP4      bool
-	ffmpeg         string
-	err            sync.Map
-	removeSubTs    bool
-	m3u8           *M3u8
-	m3u8Copy       AllM3u8
-	allDone        chan struct{}
-	doneCnt        int32
-	eventChan      chan Event
-	stopSignalChan chan struct{}
+	ChooseStream        func([]PlayInfo) PlayInfo
+	gp                  *gpool.Pool
+	wg                  sync.WaitGroup
+	qpsLimit            *rate.Limiter
+	fileDir             string
+	tsFilePrefix        string
+	doMerge             bool
+	convToMP4           bool
+	ffmpeg              string
+	err                 sync.Map
+	removeSubTs         bool
+	m3u8                *M3u8
+	m3u8Copy            AllM3u8
+	allDone             chan struct{}
+	doneCnt             int32
+	eventChan           chan Event
+	stopSignalChan      chan struct{}
+	httpRequestCallback func(r *http.Request) error
 }
 
 type Result struct {
@@ -459,10 +462,18 @@ func (md *m3u8Downloader) httpGet(u string) ([]byte, error) {
 			return nil, fmt.Errorf("wait on limiter error, %w", err)
 		}
 	}
-
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new request fail, %w", err)
+	}
+	if md.httpRequestCallback != nil {
+		if err = md.httpRequestCallback(req); err != nil {
+			return nil, fmt.Errorf("http request callback exec fail, %w", err)
+		}
+	}
 	resp, err := (&http.Client{
 		Timeout: 30 * time.Second,
-	}).Get(u)
+	}).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http get %s error, %w", u, err)
 	}
